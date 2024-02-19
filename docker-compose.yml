@@ -11,13 +11,6 @@ services:
       - QT_X11_NO_MITSHM=1
       - RVIZ_GUI=true
       - GAZEBO_GUI=true
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     ipc: host
     stdin_open: true
     tty: true
@@ -40,13 +33,6 @@ services:
       - XAUTORITY
       - QT_X11_NO_MITSHM=1
       - GUI=true
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     depends_on: 
       scene:
         condition: service_healthy
