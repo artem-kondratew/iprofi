@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import os
 import rospy
-import cv2
+import cv2 as cv
+import numpy as np
 from cv_bridge import CvBridge
 
 from nav_msgs.msg import Odometry
@@ -10,6 +11,12 @@ from geometry_msgs.msg import Vector3
 
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import Range
+
+# For NN
+import argparse
+import torch
+from network import ResnetUnetHybrid
+import image_utils
 
 class Example(object):
 
@@ -24,7 +31,6 @@ class Example(object):
 
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=3)
         self.odom_subscriber = rospy.Subscriber("/odom", Odometry, self.odom_callback)
-        self.range_front_subscriber = rospy.Subscriber("/range/front", Range, self.range_front_callback)
 
         self.odometry = Odometry()
         self.command = Twist()
@@ -34,7 +40,9 @@ class Example(object):
         self.curent_image = None
         self.bridge = CvBridge()
 
-        rospy.loginfo("[Example] loaded")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        rospy.loginfo(self.device)
+        self.cnt = 0
 
     def __del__(self):
         pass
@@ -43,14 +51,41 @@ class Example(object):
         # stop robots here
         self.cmd_vel.publish(Twist())
 
+    def predict_img(self, img):
+        # load model
+        rospy.loginfo(f'Loading model..., {self.cnt}')
+        self.cnt += 1
+        model = ResnetUnetHybrid.load_pretrained(device=self.device)
+        model.eval()
+
+        # load image
+        img = img[..., ::-1]
+        img = image_utils.scale_image(img)
+        img = image_utils.center_crop(img)
+        inp = image_utils.img_transform(img)
+        inp = inp[None, :, :, :].to(self.device)
+
+        # inference
+        output = model(inp)
+        # transform and plot the results
+        output = output.cpu()[0].data.numpy()
+
+        depth = np.transpose(output, (1, 2, 0))[:, :, 0]
+
+        return depth
+
     def camera_cb(self, msg):
         frame = self.bridge.imgmsg_to_cv2(msg)
         # some processing here
 
         #display from onbourd camera
         if self.gui != False:
-            cv2.imshow("output", frame)
-            cv2.waitKey(1)
+            cv.imshow("output", frame)
+
+            depth = self.predict_img(frame)
+            cv.imshow("d", depth)
+
+            cv.waitKey(1)
 
     def range_front_callback(self, msg):
         self.sonar_data[0] = msg.range
