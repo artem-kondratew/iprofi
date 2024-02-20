@@ -68,17 +68,9 @@ class Example(object):
         while not rospy.is_shutdown():
             t = rospy.get_time() - t0
 
-            # check if there is no obstacles in forward robot direction
-            if self.sonar_data[0] > 0.7:
-                self.command.linear.x = 0.5
-                self.command.linear.y = 0.0
-                self.command.angular.z = 0.0
-            else:
-                self.command.linear.x = -0.1
-                self.command.linear.y = 0.0
-                self.command.angular.z = 0.4
-                self.cmd_vel.publish(self.command)
-                rospy.sleep(1)
+            self.command.linear.x = 0.0
+            self.command.linear.y = 0.0
+            self.command.angular.z = 0.5
 
             self.cmd_vel.publish(self.command)
 

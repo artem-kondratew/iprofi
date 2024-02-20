@@ -11,85 +11,79 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/highgui/highgui.hpp>
 
-// #include "example.hpp"
 
-static const std::string OPENCV_WINDOW = "Forward camera";
-
-class Example {
-
-  private:
+class Roi {
+private:
     ros::NodeHandle nh;
+    ros::Publisher image_pub;
     ros::Publisher cmd_vel_pub;
     ros::Subscriber image_sub;
-    ros::Subscriber range_front_sub;
-    ros::Rate rate = ros::Rate(30);
 
     cv_bridge::CvImagePtr cv_ptr;
 
-    std::vector<double> sonar_data{0, 0, 0, 0};
-
-  public:
-
-    Example()
-    {
+public:
+    Roi() {
+        image_pub = nh.advertise<sensor_msgs::Image>("/head/camera1/roi", 1);
         cmd_vel_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
-        image_sub = nh.subscribe("/head/camera1/image_raw", 1, &Example::camera_cb, this);
-        range_front_sub = nh.subscribe("/range/front", 1, &Example::range_front, this);
-
-        cv::namedWindow(OPENCV_WINDOW);
+        image_sub = nh.subscribe("/head/camera1/image_raw", 1, &Roi::camera_cb, this);
     
-        ros::Duration(1).sleep();
-    }
-
-    ~Example()
-    {
-        cv::destroyWindow(OPENCV_WINDOW);
+        // ros::Duration(1).sleep();
     }
 
     void camera_cb(const sensor_msgs::Image::ConstPtr &msg) {
-        try {
-            cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-        } catch (cv_bridge::Exception& e) {
-            ROS_ERROR("cv_bridge exception: %s", e.what());
-            return;
-        }
-        show_image(cv_ptr);
-    }
+        size_t w = msg->width;
+        size_t h = msg->height;
+        size_t size = w * h;
+        size_t channels = 3;
 
-    void show_image(const cv_bridge::CvImagePtr cv_ptr) {
-        cv::imshow(OPENCV_WINDOW, cv_ptr->image);
-        cv::waitKey(3);
-    }
+        cv::Mat rgb(h, w, CV_8UC3);
+        std::memcpy(rgb.data, msg->data.data(), sizeof(uint8_t) * size * channels);
 
-    void range_front(const sensor_msgs::Range::ConstPtr &msg) {
-        sonar_data[0] = msg->range;
+        int x = 100;
+        int y = 0;
+        int roi_w = w - 2 * x;
+        int roi_h = 340;
+        int roi_size = roi_w * roi_h;
+
+        cv::Rect roi_rect = cv::Rect(x, y, roi_w, roi_h);
+        cv::Mat roi = rgb(roi_rect).clone();
+        // cv::rectangle(rgb, roi_rect, {255, 0, 255}, 2);
+
+        //cv::imshow("rgb", rgb);
+        //cv::imshow("roi", roi);
+        //cv::waitKey(20);
+
+        auto pub_msg = sensor_msgs::Image();
+        pub_msg.header.frame_id = msg->header.frame_id;
+        pub_msg.header.stamp = msg->header.stamp;
+
+        pub_msg.height = roi_h;
+        pub_msg.width = roi_w;
+
+        pub_msg.encoding = msg->encoding;
+        pub_msg.is_bigendian = msg->is_bigendian;
+        pub_msg.step = roi_w * channels;
+
+        pub_msg.data.resize(roi_size * channels);
+        std::memcpy(pub_msg.data.data(), roi.data, sizeof(uint8_t) * roi_size * channels);
+
+        image_pub.publish(pub_msg);
     }
 
     void spin() {
-
         double t0 = ros::Time::now().toSec();
         while (nh.ok()) {
             double t = ros::Time::now().toSec() - t0;
 
             geometry_msgs::Twist command;
 
-            // check if there is no obstacles in forward robot direction
-            if (sonar_data[0] > 0.7) {
-                command.linear.x = 0.5;
-                command.linear.y = 0.0;
-                command.angular.z = 0.0;
-            } else {
-                command.linear.x = -0.1;
-                command.linear.y = 0.0;
-                command.angular.z = 0.4;
-                cmd_vel_pub.publish(command);
-                ros::Duration(1.0).sleep();
-            }
+            // command.linear.x = 0.0;
+            // command.linear.y = 0.0;
+            // command.angular.z = 0.5;
 
-            cmd_vel_pub.publish(command);
+            // cmd_vel_pub.publish(command);
 
             ros::spinOnce();
-            rate.sleep();
         }
     }
 
@@ -100,7 +94,7 @@ int main(int argc, char * argv[])
 {
     ros::init(argc, argv, "example_node");
 
-    Example ex;
+    Roi ex;
     ex.spin();
 
     return 0;
